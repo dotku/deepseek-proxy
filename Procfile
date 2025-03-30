@@ -1,1 +1,1 @@
-web: gunicorn --bind 0.0.0.0:8000 application:application --workers 4 --worker-class uvicorn.workers.UvicornWorker --timeout 120
+web: PYTHONPATH=/var/app/current gunicorn --bind 0.0.0.0:8000 application:application --workers 4 --worker-class uvicorn.workers.UvicornWorker --timeout 120
