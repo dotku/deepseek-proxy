@@ -1,7 +1,9 @@
 import os
-import requests
-from flask import Flask, request, Response, jsonify
-from flask_cors import CORS
+from typing import Dict, Any
+import httpx
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse, JSONResponse
 from dotenv import load_dotenv
 
 # Load environment variables from .env.local file with override
@@ -13,8 +15,16 @@ load_dotenv('.env.local', override=True)  # Then override with .env.local
 print(f"DEEPSEEK_API_URL: {os.getenv('DEEPSEEK_API_URL')}")
 print(f"DEEPSEEK_API_KEY: {os.getenv('DEEPSEEK_API_KEY', '')[:8]}...")  # Only print first 8 chars of key for security
 
-app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
+app = FastAPI(title="DeepSeek Proxy")
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Load DEEPSEEK_API_KEY from the environment variables
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
@@ -26,8 +36,8 @@ if not DEEPSEEK_API_KEY:
 if not DEEPSEEK_API_URL:
     raise ValueError("DEEPSEEK_API_URL environment variable not set")
 
-# Function to forward the request to DeepSeek with streaming
-def forward_to_deepseek_streaming(data, uri):
+async def forward_to_deepseek_streaming(data: Dict[str, Any], uri: str):
+    """Forward request to DeepSeek API with streaming support."""
     headers = {
         "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
         "Content-Type": "application/json"
@@ -35,52 +45,67 @@ def forward_to_deepseek_streaming(data, uri):
 
     # Construct the full URL by appending the URI path
     full_url = f"{DEEPSEEK_API_URL.rstrip('/')}/{uri}"
-    # print all post data
-    print(data)
-    print(headers)
-    print(full_url) 
-    print(uri)
-
-    # Using 'stream=True' to enable response streaming
-    response = requests.post(full_url, json=data, headers=headers, stream=True)
     
-    # Check if response is successful
-    response.raise_for_status()
-    return response
+    # Debug prints
+    print("Request data:", data)
+    print("Headers:", headers)
+    print("URL:", full_url)
+    print("URI:", uri)
 
-# Define the proxy endpoint with streaming
-@app.route('/<path:uri>', methods=['POST', 'GET', 'PUT', 'DELETE', 'PATCH'])
-def proxy(uri):
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            full_url,
+            json=data,
+            headers=headers,
+            timeout=60.0
+        )
+        response.raise_for_status()
+        return response
+
+@app.get("/ping")
+@app.get("/health")
+async def health_check():
+    """Health check endpoint."""
+    return {"status": "ok", "message": "pong"}
+
+@app.api_route("/{uri:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+async def proxy(request: Request, uri: str):
+    """Generic proxy endpoint that forwards requests to DeepSeek API."""
     try:
-        # Get the request body from the client
-        data = request.json if request.is_json else {}
+        # Get request body if any
+        data = {}
+        if request.method in ["POST", "PUT", "PATCH"]:
+            data = await request.json()
 
-        # Forward the request to DeepSeek and get the streaming response
-        deepseek_response = forward_to_deepseek_streaming(data, uri)
+        # Forward request to DeepSeek
+        deepseek_response = await forward_to_deepseek_streaming(data, uri)
 
-        # If response is not streaming or is JSON, return it directly
-        if not deepseek_response.headers.get('Transfer-Encoding') == 'chunked':
-            return jsonify(deepseek_response.json()), deepseek_response.status_code
+        # Stream the response back
+        async def generate():
+            async for chunk in deepseek_response.aiter_bytes():
+                if chunk:
+                    yield chunk
 
-        # For streaming responses, stream the content
-        def generate():
-            try:
-                for chunk in deepseek_response.iter_lines(decode_unicode=True):
-                    if chunk:
-                        yield chunk + '\n'
-            except Exception as e:
-                yield str({"error": str(e)})
+        return StreamingResponse(
+            generate(),
+            status_code=deepseek_response.status_code,
+            headers={
+                "Content-Type": deepseek_response.headers.get("Content-Type", "application/json")
+            }
+        )
 
-        # Create a streaming response using Flask's Response class
-        content_type = deepseek_response.headers.get('Content-Type', 'application/json')
-        return Response(generate(), content_type=content_type, status=deepseek_response.status_code)
-
-    except requests.exceptions.RequestException as e:
-        return jsonify({"error": str(e)}), getattr(e.response, 'status_code', 500)
+    except httpx.HTTPError as e:
+        return JSONResponse(
+            status_code=e.response.status_code if hasattr(e, 'response') else 500,
+            content={"error": str(e)}
+        )
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e)}
+        )
 
 if __name__ == "__main__":
-    # Run the Flask app
+    import uvicorn
     port = int(os.getenv("PORT", 8080))
-    app.run(host="0.0.0.0", port=port)
+    uvicorn.run(app, host="0.0.0.0", port=port)
