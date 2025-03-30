@@ -1,0 +1,4 @@
+{
+    // Allow any style of ordered list markers (1. 2. 3. or all 1.)
+    "MD029": false
+}
