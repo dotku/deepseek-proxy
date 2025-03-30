@@ -14,4 +14,4 @@ ENV PORT=8080
 EXPOSE 8080
 
 # Use uvicorn to run the FastAPI application
-CMD ["uvicorn", "deepseek_proxy:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uvicorn", "application:application", "--host", "0.0.0.0", "--port", "8080"]
