@@ -35,7 +35,6 @@ def forward_to_deepseek_streaming(data, uri):
     return response
 
 # Define the proxy endpoint with streaming
-# should able to support all HTTP path, eg /v1/chat/completions 
 @app.route('/<path:uri>', methods=['POST', 'GET', 'PUT', 'DELETE', 'PATCH'])
 def proxy(uri):
     try:
@@ -58,7 +57,5 @@ def proxy(uri):
         # Return an error message if something goes wrong
         return {"error": str(e)}, 500
 
-if __name__ == "__main__":
-    # Run the Flask app
-    port = int(os.getenv("PORT", 8080))
-    app.run(host="0.0.0.0", port=port)
+# For Vercel, we need to expose the app
+app.debug = True
