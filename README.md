@@ -15,7 +15,12 @@ A proxy for DeepSeek API with token management and friendly Chinese responses.
 ### Local Development
 
 ```bash
-python3 deepseek_proxy.py
+# For development with auto-reload
+uvicorn application:application --reload --host 0.0.0.0 --port 8080
+
+# For testing Elastic Beanstalk environment locally
+export PORT=8080
+gunicorn -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT application:application
 ```
 
 ### Docker
