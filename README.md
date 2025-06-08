@@ -44,6 +44,14 @@ docker run -d \
 
 The proxy will be available at `http://localhost:8080`.
 
+## Deployment
+
+```sh
+eb deploy
+# update environment variables
+eb setenv DEEPSEEK_API_KEY=your_api_key DEEPSEEK_API_URL=your_api_url
+```
+
 ## Environment Variables
 
 - `DEEPSEEK_API_KEY`: your DeepSeek API key
